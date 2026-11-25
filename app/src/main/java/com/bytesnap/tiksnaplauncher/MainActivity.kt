@@ -8,12 +8,10 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.os.Bundle
-import android.provider.SearchRecentSuggestions
 import android.app.SearchManager
 import android.net.Uri
 import android.view.MotionEvent
@@ -22,6 +20,7 @@ import android.view.Window
 import android.widget.Toast
 import android.content.pm.ResolveInfo
 import android.text.TextUtils
+import android.text.TextPaint
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -225,7 +224,7 @@ private class LauncherSurface(
         textSize = 16f * density
         typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
     }
-    private val smallTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val smallTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         textSize = 12f * density
         typeface = Typeface.create("sans-serif", Typeface.NORMAL)
