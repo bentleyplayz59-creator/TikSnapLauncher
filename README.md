@@ -1,34 +1,28 @@
 # TikSnapLauncher
 
-A custom Android Home launcher featuring a TikSnap-themed home screen.
+A custom Android Home launcher featuring a native-drawn, two-page home screen.
 
-## Home screen reference images
+## Design references
 
-Two reference images are stored as full Base64 data URLs (each file is one line starting with `data:image/png;base64,`):
+The Base64 images in `normal_home_screen.txt` and `tiksnap_home_screen.txt` are **visual references only**. They are not rendered as launcher backgrounds or used as screen content.
 
-| File | What it is |
-| --- | --- |
-| `normal_home_screen.txt` | The normal home screen: a Samsung Galaxy phone showing the standard app icons (Galaxy Store, Gallery, Play Store, Google) and the regular dock. |
-| `tiksnap_home_screen.txt` | The TikSnap home screen: the phone home screen where every app icon and label has been replaced with the TikSnap icon and the name "TikSnap". |
+The app draws its interface at runtime:
+- A Samsung-inspired home page with clock/date, a weather/search card, app shortcuts, Google search bar, dock and page indicator.
+- A second page with a 4-by-5 grid of real TikSnap app shortcuts, plus a TikSnap-only dock.
+- An installed-app drawer with real app icons and launch actions.
+- Swipe navigation between pages and swipe-up drawer access.
 
-To turn either file back into an image (for example in Termux), strip the prefix and decode it:
+## Build
 
-```sh
-sed 's/^data:image\/png;base64,//' tiksnap_home_screen.txt | base64 -d > tiksnap_home_screen.png
-sed 's/^data:image\/png;base64,//' normal_home_screen.txt | base64 -d > normal_home_screen.png
-```
+The GitHub Actions workflow builds a debug APK on pushes to `main` and on manual dispatch.
 
-## Getting started
+1. Download the `TikSnapLauncher-debug` artifact from the Actions run.
+2. Extract `app-debug.apk`.
+3. Install it on the Android device.
+4. Open Android Settings → Apps → Default apps → Home app and select TikSnapLauncher.
 
-1. Clone the repository:
+## Package
 
-   ```sh
-   git clone https://github.com/bentleyplayz59-creator/TikSnapLauncher.git
-   ```
+`com.bytesnap.tiksnaplauncher`
 
-2. Open the project in Android Studio and build it, or build it from the command line.
-3. Install the app on your device and set it as your default Home app in Android settings.
-
-## Contributing
-
-Issues and pull requests are welcome.
+TikSnap shortcut target: `com.bytesnap.tiksnap`.
