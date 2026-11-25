@@ -347,7 +347,7 @@ private class LauncherSurface(
         }
     }
 
-    private fun launch(vararg packages: String) = openPackage(packages.toList())
+    private fun launch(packages: List<String>) = openPackage(packages)
 
     private fun findApp(vararg packages: String): LauncherApp? =
         packages.firstNotNullOfOrNull { pkg -> installedApps.firstOrNull { it.packageName == pkg } }
@@ -423,15 +423,15 @@ private class LauncherSurface(
         val col = (x / cellW).toInt().coerceIn(0, columns - 1)
         val row = ((y - top) / cellH).toInt() + drawerScroll
         val index = row * columns + col
-        if (index in installedApps.indices) launch(installedApps[index].packageName)
+        if (index in installedApps.indices) launch(listOf(installedApps[index].packageName))
     }
 
     private fun handleHomeTap(x: Float, y: Float) {
         val nx = x / width.toFloat()
         val ny = y / height.toFloat()
         if (page == 1) {
-            if (ny > .87f) launch("com.bytesnap.tiksnap")
-            else if (ny > .08f && ny < .84f) launch("com.bytesnap.tiksnap")
+            if (ny > .87f) launch(listOf("com.bytesnap.tiksnap"))
+            else if (ny > .08f && ny < .84f) launch(listOf("com.bytesnap.tiksnap"))
             else if (nx > .85f && ny < .08f) showMenu()
             return
         }
@@ -442,10 +442,10 @@ private class LauncherSurface(
         if (ny in .40f.. .60f) {
             val col = (nx * 4).toInt().coerceIn(0, 3)
             when (col) {
-                0 -> launch("com.sec.android.app.samsungapps", "com.android.vending")
-                1 -> launch("com.sec.android.gallery3d", "com.google.android.apps.photos")
-                2 -> launch("com.android.vending")
-                3 -> launch("com.google.android.googlequicksearchbox", "com.android.chrome")
+                0 -> launch(listOf("com.sec.android.app.samsungapps", "com.android.vending"))
+                1 -> launch(listOf("com.sec.android.gallery3d", "com.google.android.apps.photos"))
+                2 -> launch(listOf("com.android.vending"))
+                3 -> launch(listOf("com.google.android.googlequicksearchbox", "com.android.chrome"))
             }
             return
         }
@@ -455,10 +455,10 @@ private class LauncherSurface(
         }
         if (ny > .82f) {
             when ((nx * 4).toInt().coerceIn(0, 3)) {
-                0 -> launch("com.samsung.android.dialer", "com.google.android.dialer", "com.android.dialer")
-                1 -> launch("com.samsung.android.messaging", "com.google.android.apps.messaging")
-                2 -> launch("com.android.chrome")
-                3 -> launch("com.sec.android.app.camera", "com.android.camera2")
+                0 -> launch(listOf("com.samsung.android.dialer", "com.google.android.dialer", "com.android.dialer"))
+                1 -> launch(listOf("com.samsung.android.messaging", "com.google.android.apps.messaging"))
+                2 -> launch(listOf("com.android.chrome"))
+                3 -> launch(listOf("com.sec.android.app.camera", "com.android.camera2"))
             }
         }
     }
