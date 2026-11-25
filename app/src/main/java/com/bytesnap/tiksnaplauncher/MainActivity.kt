@@ -42,7 +42,7 @@ class MainActivity : Activity() {
         surface = LauncherSurface(
             activity = this,
             installedApps = loadApps(),
-            openPackage = ::openPackage,
+            openPackage = { packages -> openPackage(*packages.toTypedArray()) },
             openSearch = ::openSearch,
             showMenu = ::showMenu
         )
@@ -127,7 +127,7 @@ class MainActivity : Activity() {
 private class LauncherSurface(
     private val activity: Activity,
     private val installedApps: List<LauncherApp>,
-    private val openPackage: (String) -> Unit,
+    private val openPackage: (List<String>) -> Unit,
     private val openSearch: (String) -> Unit,
     private val showMenu: () -> Unit
 ) : View(activity) {
@@ -346,6 +346,8 @@ private class LauncherSurface(
             drawLabel(canvas, installedApps[index].label, cx, cy + dp(36f))
         }
     }
+
+    private fun launch(vararg packages: String) = openPackage(packages.toList())
 
     private fun findApp(vararg packages: String): LauncherApp? =
         packages.firstNotNullOfOrNull { pkg -> installedApps.firstOrNull { it.packageName == pkg } }
