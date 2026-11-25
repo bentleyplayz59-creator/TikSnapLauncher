@@ -391,7 +391,7 @@ private class LauncherSurface(
         if (index in drawerApps.indices) {
             val app = drawerApps[index]
             try {
-                val intent = packageManager.getLaunchIntentForPackage(app.packageName)
+                val intent = context.packageManager.getLaunchIntentForPackage(app.packageName)
                 if (intent != null) context.startActivity(intent)
                 else Toast.makeText(context, "Unable to open " + app.label, Toast.LENGTH_SHORT).show()
             } catch (_: Exception) {
