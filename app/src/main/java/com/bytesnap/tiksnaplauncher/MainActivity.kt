@@ -2,328 +2,374 @@ package com.bytesnap.tiksnaplauncher
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.SearchManager
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
-import android.os.Bundle
-import android.app.SearchManager
 import android.net.Uri
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.text.TextPaint
 import android.view.MotionEvent
 import android.view.View
-import android.view.Window
 import android.widget.Toast
-import android.content.pm.ResolveInfo
-import android.text.TextUtils
-import android.text.TextPaint
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
-private enum class LaunchTarget {
-    TIKSNAP, GALAXY_STORE, GALLERY, PLAY_STORE, GOOGLE,
-    PHONE, MESSAGES, CHROME, CAMERA, SEARCH, WEATHER
-}
-
-private data class DrawerApp(
-    val label: String,
-    val packageName: String,
-    val icon: Drawable
-)
+private data class LauncherApp(val label: String, val packageName: String, val icon: Drawable)
 
 class MainActivity : Activity() {
-    private lateinit var launcherSurface: LauncherSurface
+    private lateinit var surface: LauncherSurface
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val normal = loadAssetBitmap("normal_home_screen.png")?.let {
-            cropBitmap(it, 20, 56, 341, 680)
-        }
-        val tiksnap = loadAssetBitmap("tiksnap_home_screen.png")?.let {
-            cropBitmap(it, 0, 82, 1080, 2220)
-        }
-
-        launcherSurface = LauncherSurface(
-            activity = this,
-            normalReference = normal,
-            tikSnapReference = tiksnap,
-            drawerApps = loadDrawerApps(),
-            launchTarget = ::launchTarget,
-            search = { query -> openSearch(query) },
-            openMenu = ::showLauncherMenu,
-            pageChanged = ::updateSystemBars
-        )
-
-        setContentView(launcherSurface)
-        updateSystemBars(0)
-    }
-
-    private fun loadAssetBitmap(name: String): Bitmap? {
-        return try {
-            assets.open(name).use { BitmapFactory.decodeStream(it) }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun cropBitmap(source: Bitmap, left: Int, top: Int, right: Int, bottom: Int): Bitmap {
-        val x = left.coerceIn(0, source.width - 1)
-        val y = top.coerceIn(0, source.height - 1)
-        val r = right.coerceIn(x + 1, source.width)
-        val b = bottom.coerceIn(y + 1, source.height)
-        return Bitmap.createBitmap(source, x, y, r - x, b - y)
-    }
-
-    private fun loadDrawerApps(): List<DrawerApp> {
-        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        return try {
-            packageManager.queryIntentActivities(launcherIntent, 0)
-                .mapNotNull { info ->
-                    val packageName = info.activityInfo?.packageName ?: return@mapNotNull null
-                    if (packageName == packageNameForThisApp()) return@mapNotNull null
-                    DrawerApp(
-                        label = info.loadLabel(packageManager)?.toString() ?: packageName,
-                        packageName = packageName,
-                        icon = info.loadIcon(packageManager)
-                    )
-                }
-                .distinctBy { it.packageName }
-                .sortedBy { it.label.lowercase() }
-        } catch (_: Exception) {
-            emptyList()
-        }
-    }
-
-    private fun packageNameForThisApp(): String = applicationContext.packageName
-
-    private fun updateSystemBars(page: Int) {
-        val status = if (page == 0) Color.rgb(111, 35, 205) else Color.rgb(0, 96, 120)
-        val navigation = if (page == 0) Color.rgb(83, 102, 199) else Color.rgb(0, 96, 120)
-        window.statusBarColor = status
-        window.navigationBarColor = navigation
+        window.statusBarColor = Color.rgb(105, 54, 190)
+        window.navigationBarColor = Color.rgb(28, 24, 44)
         window.decorView.systemUiVisibility = 0
         if (android.os.Build.VERSION.SDK_INT >= 29) {
             window.isNavigationBarContrastEnforced = false
             window.isStatusBarContrastEnforced = false
         }
+        surface = LauncherSurface(
+            activity = this,
+            installedApps = loadApps(),
+            openPackage = ::openPackage,
+            openSearch = ::openSearch,
+            showMenu = ::showMenu
+        )
+        setContentView(surface)
     }
 
-    private fun launchTarget(target: LaunchTarget) {
-        when (target) {
-            LaunchTarget.TIKSNAP -> launchFirst(
-                "com.bytesnap.tiksnap"
-            )
-            LaunchTarget.GALAXY_STORE -> launchFirst("com.sec.android.app.samsungapps")
-            LaunchTarget.GALLERY -> launchFirst("com.sec.android.gallery3d")
-            LaunchTarget.PLAY_STORE -> launchFirst("com.android.vending")
-            LaunchTarget.GOOGLE -> launchFirst("com.google.android.googlequicksearchbox")
-            LaunchTarget.PHONE -> launchFirst(
-                "com.samsung.android.dialer",
-                "com.google.android.dialer",
-                "com.android.dialer"
-            )
-            LaunchTarget.MESSAGES -> launchFirst(
-                "com.samsung.android.messaging",
-                "com.google.android.apps.messaging"
-            )
-            LaunchTarget.CHROME -> launchFirst("com.android.chrome")
-            LaunchTarget.CAMERA -> launchFirst(
-                "com.sec.android.app.camera",
-                "com.android.camera2"
-            )
-            LaunchTarget.SEARCH -> openSearch("")
-            LaunchTarget.WEATHER -> openSearch("weather in Blacksburg")
-        }
-    }
-
-    private fun launchFirst(vararg packageNames: String) {
-        for (packageName in packageNames) {
-            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-            if (launchIntent != null) {
-                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                try {
-                    startActivity(launchIntent)
-                    return
-                } catch (_: Exception) {
+    private fun loadApps(): List<LauncherApp> {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        return try {
+            packageManager.queryIntentActivities(intent, 0)
+                .mapNotNull { item ->
+                    val activityInfo = item.activityInfo ?: return@mapNotNull null
+                    if (activityInfo.packageName == packageName) return@mapNotNull null
+                    LauncherApp(
+                        item.loadLabel(packageManager)?.toString() ?: activityInfo.packageName,
+                        activityInfo.packageName,
+                        item.loadIcon(packageManager)
+                    )
                 }
-            }
+                .distinctBy { it.packageName }
+                .sortedBy { it.label.lowercase(Locale.getDefault()) }
+        } catch (_: Exception) {
+            emptyList()
         }
-        Toast.makeText(this, "That app is not installed on this device.", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun openPackage(vararg packages: String) {
+        for (name in packages) {
+            val intent = packageManager.getLaunchIntentForPackage(name) ?: continue
+            try {
+                startActivity(intent)
+                return
+            } catch (_: Exception) { }
+        }
+        Toast.makeText(this, "That app isn't installed.", Toast.LENGTH_SHORT).show()
     }
 
     private fun openSearch(query: String) {
         try {
-            val intent = Intent(Intent.ACTION_WEB_SEARCH).putExtra(SearchManager.QUERY, query)
-            startActivity(intent)
+            startActivity(Intent(Intent.ACTION_WEB_SEARCH).putExtra(SearchManager.QUERY, query))
         } catch (_: Exception) {
             try {
                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=" + Uri.encode(query))))
             } catch (_: Exception) {
-                launchFirst("com.google.android.googlequicksearchbox", "com.android.chrome")
+                openPackage("com.google.android.googlequicksearchbox", "com.android.chrome")
             }
         }
     }
 
-    private fun showLauncherMenu() {
-        val options = arrayOf("Open TikSnap", "Google Search", "Launcher information")
+    private fun showMenu() {
         AlertDialog.Builder(this)
             .setTitle("TikSnapLauncher")
-            .setItems(options) { _, which ->
+            .setItems(arrayOf("Open TikSnap", "Search", "App drawer", "Launcher information")) { _, which ->
                 when (which) {
-                    0 -> launchTarget(LaunchTarget.TIKSNAP)
+                    0 -> openPackage("com.bytesnap.tiksnap")
                     1 -> openSearch("")
-                    2 -> AlertDialog.Builder(this)
-                        .setTitle("TikSnapLauncher 1.0.0")
-                        .setMessage(
-                            "A two-page Android Home launcher. Swipe between the standard Samsung-style home screen and the TikSnap icon wall. Swipe up on the normal home screen to open the installed-app drawer."
-                        )
-                        .setPositiveButton("OK", null)
-                        .show()
+                    2 -> surface.openDrawer()
+                    3 -> AlertDialog.Builder(this)
+                        .setTitle("TikSnapLauncher")
+                        .setMessage("A custom two-page Android Home launcher. Swipe between the standard home page and the TikSnap icon page. Swipe up to browse installed apps.")
+                        .setPositiveButton("OK", null).show()
                 }
-            }
-            .show()
+            }.show()
     }
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        launcherSurface.closeDrawer()
-        launcherSurface.setPage(0)
+        surface.closeDrawer()
+        surface.setPage(0)
     }
 
     @Deprecated("Deprecated in Android API")
     override fun onBackPressed() {
-        if (launcherSurface.isDrawerOpen()) {
-            launcherSurface.closeDrawer()
-        } else if (launcherSurface.currentPage() == 1) {
-            launcherSurface.setPage(0)
+        when {
+            surface.isDrawerOpen() -> surface.closeDrawer()
+            surface.currentPage() == 1 -> surface.setPage(0)
+            else -> super.onBackPressed()
         }
     }
 }
 
 private class LauncherSurface(
-    activity: Activity,
-    private val normalReference: Bitmap?,
-    private val tikSnapReference: Bitmap?,
-    private val drawerApps: List<DrawerApp>,
-    private val launchTarget: (LaunchTarget) -> Unit,
-    private val search: (String) -> Unit,
-    private val openMenu: () -> Unit,
-    private val pageChanged: (Int) -> Unit
+    private val activity: Activity,
+    private val installedApps: List<LauncherApp>,
+    private val openPackage: (String) -> Unit,
+    private val openSearch: (String) -> Unit,
+    private val showMenu: () -> Unit
 ) : View(activity) {
-
     private val density = resources.displayMetrics.density
-    private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private fun dp(value: Float) = value * density
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = true }
+    private val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
-        textSize = 16f * density
+        textSize = dp(25f)
         typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
     }
-    private val smallTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val labelPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
-        textSize = 12f * density
-        typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+        textSize = dp(11f)
         textAlign = Paint.Align.CENTER
+        typeface = Typeface.create("sans-serif", Typeface.NORMAL)
     }
-    private val drawerPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val subPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textSize = dp(13f)
+        typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+    }
+    private val clockPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textSize = dp(54f)
+        typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+    }
+    private val mutedPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val iconCache = HashMap<String, Drawable>()
+    private val handler = Handler(Looper.getMainLooper())
     private var page = 0
-    private var drawerOpen = false
-    private var drawerScrollRow = 0
+    private var drawer = false
+    private var drawerScroll = 0
     private var downX = 0f
     private var downY = 0f
+    private var downTime = 0L
+    private val tick = object : Runnable {
+        override fun run() {
+            if (page == 0 && !drawer) invalidate()
+            handler.postDelayed(this, 30_000L)
+        }
+    }
+
+    private val tikSnapIcon: Drawable? by lazy {
+        try { activity.packageManager.getApplicationIcon("com.bytesnap.tiksnap") }
+        catch (_: Exception) { activity.getDrawable(android.R.drawable.sym_def_app_icon) }
+    }
 
     init {
         isFocusable = true
         isClickable = true
-        setBackgroundColor(Color.rgb(0, 96, 120))
+        handler.post(tick)
     }
 
-    fun currentPage(): Int = page
-    fun isDrawerOpen(): Boolean = drawerOpen
+    fun currentPage() = page
+    fun isDrawerOpen() = drawer
+    fun openDrawer() { drawer = true; drawerScroll = 0; invalidate() }
+    fun closeDrawer() { drawer = false; drawerScroll = 0; invalidate() }
 
     fun setPage(value: Int) {
-        drawerOpen = false
-        val next = value.coerceIn(0, 1)
-        if (page != next) {
-            page = next
-            pageChanged(page)
-        }
-        invalidate()
-    }
-
-    fun closeDrawer() {
-        drawerOpen = false
-        drawerScrollRow = 0
+        page = value.coerceIn(0, 1)
+        drawer = false
+        activity.window.statusBarColor = if (page == 0) Color.rgb(105, 54, 190) else Color.rgb(0, 105, 120)
         invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val reference = if (page == 0) normalReference else tikSnapReference
-        if (reference != null) {
-            canvas.drawBitmap(reference, null, RectF(0f, 0f, width.toFloat(), height.toFloat()), bitmapPaint)
-        } else {
-            canvas.drawColor(if (page == 0) Color.rgb(95, 65, 190) else Color.rgb(0, 96, 120))
-            textPaint.textSize = 22f * density
-            canvas.drawText(if (page == 0) "Home" else "TikSnap", 24f * density, 48f * density, textPaint)
+        if (drawer) {
+            drawDrawer(canvas)
+            return
         }
-        if (drawerOpen) drawAppDrawer(canvas)
+        if (page == 0) drawNormalHome(canvas) else drawTikSnapHome(canvas)
+        drawPageIndicator(canvas)
     }
 
-    private fun drawAppDrawer(canvas: Canvas) {
-        canvas.drawColor(Color.argb(248, 8, 22, 34))
-        textPaint.textSize = 23f * density
-        canvas.drawText("Apps", 22f * density, 38f * density, textPaint)
+    private fun drawWallpaper(canvas: Canvas, second: Boolean) {
+        val colors = if (second) intArrayOf(Color.rgb(0, 91, 111), Color.rgb(9, 139, 148), Color.rgb(25, 48, 89))
+                     else intArrayOf(Color.rgb(109, 45, 189), Color.rgb(77, 75, 177), Color.rgb(27, 39, 78))
+        canvas.drawColor(colors[0])
+        paint.shader = android.graphics.LinearGradient(0f, 0f, width.toFloat(), height.toFloat(), colors, null, android.graphics.Shader.TileMode.CLAMP)
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+        paint.shader = null
+        mutedPaint.color = Color.argb(24, 255, 255, 255)
+        canvas.drawCircle(width * .92f, height * .22f, width * .55f, mutedPaint)
+        mutedPaint.color = Color.argb(18, 255, 255, 255)
+        canvas.drawCircle(width * .05f, height * .67f, width * .62f, mutedPaint)
+    }
 
-        val searchRect = RectF(16f * density, 54f * density, width - 16f * density, 98f * density)
-        drawerPaint.color = Color.rgb(48, 60, 72)
-        canvas.drawRoundRect(searchRect, 24f * density, 24f * density, drawerPaint)
-        textPaint.textSize = 15f * density
-        textPaint.color = Color.LTGRAY
-        canvas.drawText("Search apps", 34f * density, 82f * density, textPaint)
-        textPaint.color = Color.WHITE
+    private fun drawNormalHome(canvas: Canvas) {
+        drawWallpaper(canvas, false)
+        val side = dp(22f)
+        val now = Date()
+        clockPaint.textSize = dp(54f)
+        canvas.drawText(SimpleDateFormat("h:mm", Locale.getDefault()).format(now), side, dp(100f), clockPaint)
+        subPaint.textSize = dp(15f)
+        canvas.drawText(SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()).format(now), side + dp(3f), dp(126f), subPaint)
+
+        // Weather card: tappable live search rather than a screenshot.
+        val card = RectF(side, dp(151f), width - side, dp(222f))
+        drawRounded(canvas, card, dp(18f), Color.argb(40, 255, 255, 255))
+        subPaint.textSize = dp(14f)
+        canvas.drawText("Weather", card.left + dp(16f), card.top + dp(27f), subPaint)
+        titlePaint.textSize = dp(29f)
+        canvas.drawText("Tap to check", card.left + dp(16f), card.top + dp(58f), titlePaint)
+        titlePaint.textSize = dp(25f)
+        canvas.drawText("☀", card.right - dp(54f), card.top + dp(53f), titlePaint)
+
+        val startY = height * .43f
+        val iconPackages = arrayOf(
+            arrayOf("com.sec.android.app.samsungapps", "com.android.vending"),
+            arrayOf("com.sec.android.gallery3d", "com.google.android.apps.photos"),
+            arrayOf("com.android.vending"),
+            arrayOf("com.google.android.googlequicksearchbox", "com.google.android.gms")
+        )
+        val labels = arrayOf("Galaxy Store", "Gallery", "Play Store", "Google")
+        for (i in 0..3) {
+            val x = width * (i + .5f) / 4f
+            val app = findApp(*iconPackages[i])
+            drawAppIcon(canvas, app?.icon ?: fallbackIcon(), x, startY, dp(48f))
+            drawLabel(canvas, labels[i], x, startY + dp(64f))
+        }
+
+        drawSearchBar(canvas, height * .68f)
+        drawDock(canvas)
+    }
+
+    private fun drawTikSnapHome(canvas: Canvas) {
+        drawWallpaper(canvas, true)
+        titlePaint.textSize = dp(21f)
+        canvas.drawText("TikSnap", dp(22f), dp(42f), titlePaint)
+        val columns = 4
+        val rows = 5
+        val top = dp(70f)
+        val bottom = height * .86f
+        val cellH = (bottom - top) / rows
+        val iconSize = min(dp(52f), width / 7f)
+        for (row in 0 until rows) {
+            for (column in 0 until columns) {
+                val cx = width * (column + .5f) / columns
+                val cy = top + row * cellH + cellH * .42f
+                drawAppIcon(canvas, tikSnapIcon ?: fallbackIcon(), cx, cy, iconSize)
+                drawLabel(canvas, "TikSnap", cx, cy + iconSize * .78f)
+            }
+        }
+        drawDock(canvas, tikSnapOnly = true)
+    }
+
+    private fun drawDock(canvas: Canvas, tikSnapOnly: Boolean = false) {
+        val dock = RectF(dp(12f), height - dp(77f), width - dp(12f), height - dp(13f))
+        drawRounded(canvas, dock, dp(25f), Color.argb(58, 16, 16, 28))
+        val targets = if (tikSnapOnly) arrayOf("TikSnap", "TikSnap", "TikSnap", "TikSnap")
+                      else arrayOf("Phone", "Messages", "Chrome", "Camera")
+        val packages = if (tikSnapOnly) Array(4) { arrayOf("com.bytesnap.tiksnap") }
+                       else arrayOf(
+                           arrayOf("com.samsung.android.dialer", "com.google.android.dialer", "com.android.dialer"),
+                           arrayOf("com.samsung.android.messaging", "com.google.android.apps.messaging"),
+                           arrayOf("com.android.chrome"),
+                           arrayOf("com.sec.android.app.camera", "com.android.camera2")
+                       )
+        for (i in 0..3) {
+            val cx = width * (i + .5f) / 4f
+            val icon = if (tikSnapOnly) tikSnapIcon ?: fallbackIcon() else findApp(*packages[i])?.icon ?: fallbackIcon()
+            drawAppIcon(canvas, icon, cx, dock.centerY(), dp(43f))
+        }
+    }
+
+    private fun drawSearchBar(canvas: Canvas, y: Float) {
+        val rect = RectF(dp(18f), y, width - dp(18f), y + dp(48f))
+        drawRounded(canvas, rect, dp(25f), Color.WHITE)
+        mutedPaint.color = Color.rgb(66, 133, 244)
+        canvas.drawCircle(rect.left + dp(23f), rect.centerY(), dp(9f), mutedPaint)
+        mutedPaint.color = Color.rgb(234, 67, 53)
+        canvas.drawCircle(rect.left + dp(28f), rect.centerY() - dp(4f), dp(5f), mutedPaint)
+        mutedPaint.color = Color.rgb(251, 188, 5)
+        canvas.drawCircle(rect.left + dp(28f), rect.centerY() + dp(4f), dp(5f), mutedPaint)
+        val p = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.DKGRAY; textSize = dp(14f) }
+        canvas.drawText("Search", rect.left + dp(48f), rect.centerY() + dp(5f), p)
+        val mic = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(66, 133, 244); textSize = dp(20f) }
+        canvas.drawText("●", rect.right - dp(30f), rect.centerY() + dp(7f), mic)
+    }
+
+    private fun drawPageIndicator(canvas: Canvas) {
+        val y = height - dp(91f)
+        for (i in 0..1) {
+            mutedPaint.color = if (i == page) Color.WHITE else Color.argb(110, 255, 255, 255)
+            canvas.drawCircle(width / 2f + (i - .5f) * dp(17f), y, dp(if (i == page) 4f else 3f), mutedPaint)
+        }
+    }
+
+    private fun drawDrawer(canvas: Canvas) {
+        canvas.drawColor(Color.rgb(19, 24, 37))
+        titlePaint.textSize = dp(25f)
+        canvas.drawText("Apps", dp(22f), dp(42f), titlePaint)
+        val search = RectF(dp(16f), dp(57f), width - dp(16f), dp(103f))
+        drawRounded(canvas, search, dp(24f), Color.rgb(47, 54, 69))
+        subPaint.color = Color.LTGRAY
+        canvas.drawText("Search apps", search.left + dp(18f), search.centerY() + dp(5f), subPaint)
+        subPaint.color = Color.WHITE
 
         val columns = 4
-        val cellWidth = width.toFloat() / columns
-        val cellHeight = 102f * density
-        val top = 116f * density
-        val rows = (drawerApps.size + columns - 1) / columns
-        val visibleRows = max(1, ((height - top) / cellHeight).toInt() + 1)
-        val lastScroll = max(0, rows - visibleRows)
-        drawerScrollRow = drawerScrollRow.coerceIn(0, lastScroll)
-
-        val first = drawerScrollRow * columns
-        val last = min(drawerApps.size, (drawerScrollRow + visibleRows) * columns)
+        val cellW = width / columns.toFloat()
+        val cellH = dp(98f)
+        val top = dp(121f)
+        val visible = max(1, ((height - top) / cellH).toInt() + 1)
+        val rows = (installedApps.size + columns - 1) / columns
+        drawerScroll = drawerScroll.coerceIn(0, max(0, rows - visible))
+        val first = drawerScroll * columns
+        val last = min(installedApps.size, (drawerScroll + visible) * columns)
         for (index in first until last) {
-            val row = index / columns - drawerScrollRow
-            val column = index % columns
-            val centerX = column * cellWidth + cellWidth / 2f
-            val cellTop = top + row * cellHeight
-            val iconSize = 46f * density
-            val iconTop = cellTop + 5f * density
-            val icon = drawerApps[index].icon
-            icon.setBounds(
-                (centerX - iconSize / 2f).toInt(),
-                iconTop.toInt(),
-                (centerX + iconSize / 2f).toInt(),
-                (iconTop + iconSize).toInt()
-            )
-            icon.draw(canvas)
-
-            val availableWidth = cellWidth - 10f * density
-            val label = TextUtils.ellipsize(
-                drawerApps[index].label,
-                smallTextPaint,
-                availableWidth,
-                TextUtils.TruncateAt.END
-            ).toString()
-            canvas.drawText(label, centerX, cellTop + 72f * density, smallTextPaint)
+            val row = index / columns - drawerScroll
+            val col = index % columns
+            val cx = (col + .5f) * cellW
+            val cy = top + row * cellH + dp(28f)
+            drawAppIcon(canvas, installedApps[index].icon, cx, cy, dp(43f))
+            drawLabel(canvas, installedApps[index].label, cx, cy + dp(36f))
         }
+    }
+
+    private fun findApp(vararg packages: String): LauncherApp? =
+        packages.firstNotNullOfOrNull { pkg -> installedApps.firstOrNull { it.packageName == pkg } }
+
+    private fun fallbackIcon(): Drawable =
+        activity.getDrawable(android.R.drawable.sym_def_app_icon)!!
+
+    private fun drawAppIcon(canvas: Canvas, icon: Drawable, cx: Float, cy: Float, size: Float) {
+        val save = canvas.save()
+        val bounds = RectF(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f)
+        icon.setBounds(bounds.left.toInt(), bounds.top.toInt(), bounds.right.toInt(), bounds.bottom.toInt())
+        icon.draw(canvas)
+        canvas.restoreToCount(save)
+    }
+
+    private fun drawLabel(canvas: Canvas, text: String, cx: Float, baseline: Float) {
+        val maxWidth = width / 4f - dp(8f)
+        val fitted = android.text.TextUtils.ellipsize(text, labelPaint, maxWidth, android.text.TextUtils.TruncateAt.END).toString()
+        canvas.drawText(fitted, cx, baseline, labelPaint)
+    }
+
+    private fun drawRounded(canvas: Canvas, rect: RectF, radius: Float, color: Int) {
+        mutedPaint.color = color
+        canvas.drawRoundRect(rect, radius, radius, mutedPaint)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -331,39 +377,26 @@ private class LauncherSurface(
             MotionEvent.ACTION_DOWN -> {
                 downX = event.x
                 downY = event.y
+                downTime = System.currentTimeMillis()
                 return true
             }
             MotionEvent.ACTION_UP -> {
                 val dx = event.x - downX
                 val dy = event.y - downY
-                val horizontalThreshold = max(55f * density, width * 0.12f)
-                val verticalThreshold = 70f * density
-
-                if (drawerOpen) {
-                    if (abs(dy) > verticalThreshold && abs(dy) > abs(dx)) {
-                        if (dy < 0f) {
-                            drawerScrollRow += max(1, (abs(dy) / (102f * density)).toInt())
-                        } else if (drawerScrollRow > 0) {
-                            drawerScrollRow = max(0, drawerScrollRow - max(1, (abs(dy) / (102f * density)).toInt()))
-                        } else {
-                            closeDrawer()
-                        }
+                val threshold = max(dp(55f), width * .13f)
+                if (drawer) {
+                    if (abs(dy) > dp(35f) && abs(dy) > abs(dx)) {
+                        drawerScroll = max(0, drawerScroll + if (dy < 0) max(1, (abs(dy) / dp(98f)).toInt()) else -max(1, (abs(dy) / dp(98f)).toInt()))
                         invalidate()
-                    } else if (abs(dx) > horizontalThreshold) {
-                        closeDrawer()
-                    } else {
-                        handleDrawerTap(event.x, event.y)
-                    }
+                    } else if (abs(dx) > threshold) closeDrawer()
+                    else handleDrawerTap(event.x, event.y)
                     return true
                 }
-
-                if (abs(dx) > horizontalThreshold && abs(dx) > abs(dy)) {
-                    setPage(if (dx < 0f) 1 else 0)
-                } else if (dy < -verticalThreshold && abs(dy) > abs(dx) && page == 0) {
-                    drawerOpen = true
-                    drawerScrollRow = 0
-                    invalidate()
-                } else if (dy > verticalThreshold && abs(dy) > abs(dx) && page == 1) {
+                if (abs(dx) > threshold && abs(dx) > abs(dy)) {
+                    setPage(if (dx < 0) 1 else 0)
+                } else if (dy < -dp(65f) && abs(dy) > abs(dx) && page == 0) {
+                    openDrawer()
+                } else if (dy > dp(65f) && abs(dy) > abs(dx) && page == 1) {
                     setPage(0)
                 } else {
                     handleHomeTap(event.x, event.y)
@@ -376,88 +409,60 @@ private class LauncherSurface(
     }
 
     private fun handleDrawerTap(x: Float, y: Float) {
-        if (y < 104f * density) {
-            search("")
+        if (y < dp(110f)) {
+            openSearch("")
             return
         }
         val columns = 4
-        val cellWidth = width.toFloat() / columns
-        val cellHeight = 102f * density
-        val top = 116f * density
+        val cellW = width / columns.toFloat()
+        val cellH = dp(98f)
+        val top = dp(121f)
         if (y < top) return
-        val column = (x / cellWidth).toInt().coerceIn(0, columns - 1)
-        val row = ((y - top) / cellHeight).toInt() + drawerScrollRow
-        val index = row * columns + column
-        if (index in drawerApps.indices) {
-            val app = drawerApps[index]
-            try {
-                val intent = context.packageManager.getLaunchIntentForPackage(app.packageName)
-                if (intent != null) context.startActivity(intent)
-                else Toast.makeText(context, "Unable to open " + app.label, Toast.LENGTH_SHORT).show()
-            } catch (_: Exception) {
-                Toast.makeText(context, "Unable to open " + app.label, Toast.LENGTH_SHORT).show()
+        val col = (x / cellW).toInt().coerceIn(0, columns - 1)
+        val row = ((y - top) / cellH).toInt() + drawerScroll
+        val index = row * columns + col
+        if (index in installedApps.indices) openPackage(installedApps[index].packageName)
+    }
+
+    private fun handleHomeTap(x: Float, y: Float) {
+        val nx = x / width.toFloat()
+        val ny = y / height.toFloat()
+        if (page == 1) {
+            if (ny > .87f) openPackage("com.bytesnap.tiksnap")
+            else if (ny > .08f && ny < .84f) openPackage("com.bytesnap.tiksnap")
+            else if (nx > .85f && ny < .08f) showMenu()
+            return
+        }
+        if (ny < .25f && ny > .13f) {
+            openSearch("weather")
+            return
+        }
+        if (ny in .40f.. .60f) {
+            val col = (nx * 4).toInt().coerceIn(0, 3)
+            when (col) {
+                0 -> openPackage("com.sec.android.app.samsungapps", "com.android.vending")
+                1 -> openPackage("com.sec.android.gallery3d", "com.google.android.apps.photos")
+                2 -> openPackage("com.android.vending")
+                3 -> openPackage("com.google.android.googlequicksearchbox", "com.android.chrome")
+            }
+            return
+        }
+        if (ny in .62f.. .76f) {
+            openSearch("")
+            return
+        }
+        if (ny > .82f) {
+            when ((nx * 4).toInt().coerceIn(0, 3)) {
+                0 -> openPackage("com.samsung.android.dialer", "com.google.android.dialer", "com.android.dialer")
+                1 -> openPackage("com.samsung.android.messaging", "com.google.android.apps.messaging")
+                2 -> openPackage("com.android.chrome")
+                3 -> openPackage("com.sec.android.app.camera", "com.android.camera2")
             }
         }
     }
 
-    private fun handleHomeTap(x: Float, y: Float) {
-        val nx = if (width == 0) 0f else x / width.toFloat()
-        val ny = if (height == 0) 0f else y / height.toFloat()
-
-        if (page == 1) {
-            if (nx > 0.82f && ny < 0.09f) {
-                openMenu()
-                return
-            }
-            if (ny in 0.07f..0.70f) {
-                val column = (nx * 4f).toInt().coerceIn(0, 3)
-                val row = ((ny - 0.065f) / 0.126f).toInt()
-                if (row in 0..4) launchTarget(LaunchTarget.TIKSNAP)
-                return
-            }
-            if (ny in 0.80f..0.89f) {
-                setPage(0)
-                return
-            }
-            if (ny > 0.89f) {
-                search("")
-                return
-            }
-        } else {
-            if (ny in 0.67f..0.82f) {
-                val column = (nx * 4f).toInt().coerceIn(0, 3)
-                val targets = arrayOf(
-                    LaunchTarget.GALAXY_STORE,
-                    LaunchTarget.GALLERY,
-                    LaunchTarget.PLAY_STORE,
-                    LaunchTarget.GOOGLE
-                )
-                launchTarget(targets[column])
-                return
-            }
-            if (ny > 0.87f) {
-                val column = (nx * 4f).toInt().coerceIn(0, 3)
-                val targets = arrayOf(
-                    LaunchTarget.PHONE,
-                    LaunchTarget.MESSAGES,
-                    LaunchTarget.CHROME,
-                    LaunchTarget.CAMERA
-                )
-                launchTarget(targets[column])
-                return
-            }
-            if (ny in 0.82f..0.87f) {
-                setPage(1)
-                return
-            }
-            if (ny in 0.54f..0.67f) {
-                search("")
-                return
-            }
-            if (ny in 0.28f..0.53f) {
-                search("weather in Blacksburg")
-                return
-            }
-        }
+    override fun onDetachedFromWindow() {
+        handler.removeCallbacks(tick)
+        super.onDetachedFromWindow()
     }
 }
